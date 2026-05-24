@@ -124,6 +124,12 @@ class PokemonShufflePlugin(Star):
             except Exception as e:
                 logger.exception("[pokemon-shuffle] render failed: %s", e)
                 yield event.plain_result(f"渲染失败: {e}")
+                return
+
+            # 命中后还有其它包含此关键词的同名条目 → 追加相关列表
+            related_msg = _format_related(result)
+            if related_msg:
+                yield event.plain_result(related_msg)
             return
 
         if result.level == "contain":
@@ -166,6 +172,20 @@ def _format_list(result: MatchResult, header_hit: bool) -> str:
             parts.append("")  # 段间空行
         parts.append(ab_header)
         parts.extend(_unique_displays(result.abilities))
+    return "\n".join(parts)
+
+
+def _format_related(result: MatchResult) -> str:
+    """精确命中后,把其余相关条目拼成一段提示文本。"""
+    parts: list[str] = []
+    if result.related_pokemons:
+        parts.append("搜索到相关宝可梦:")
+        parts.extend(_unique_displays(result.related_pokemons))
+    if result.related_abilities:
+        if parts:
+            parts.append("")
+        parts.append("搜索到相关能力:")
+        parts.extend(_unique_displays(result.related_abilities))
     return "\n".join(parts)
 
 

@@ -46,6 +46,10 @@ class MatchResult:
     level: str                    # "exact" | "contain" | "fuzzy" | "none"
     pokemons: list[Entry] = field(default_factory=list)
     abilities: list[Entry] = field(default_factory=list)
+    # 当 level == "exact" 时,这里放"其它包含关键词的同类条目"(已排除精确命中本身),
+    # 用于在卡片后追加"搜索到相关..."列表。
+    related_pokemons: list[Entry] = field(default_factory=list)
+    related_abilities: list[Entry] = field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -91,9 +95,25 @@ class Dataset:
         exact_p = [e for e in self.pokemons if nq in e.keys]
         exact_a = [e for e in self.abilities if nq in e.keys]
         if len(exact_p) + len(exact_a) == 1:
-            return MatchResult(level="exact", pokemons=exact_p, abilities=exact_a)
+            # 计算"其它包含此关键词的条目",排除精确命中本身,作为附加列表返回
+            hit = (exact_p or exact_a)[0]
+            related_p = [
+                e for e in self.pokemons
+                if e is not hit and any(nq in k for k in e.keys)
+            ]
+            related_a = [
+                e for e in self.abilities
+                if e is not hit and any(nq in k for k in e.keys)
+            ]
+            return MatchResult(
+                level="exact",
+                pokemons=exact_p,
+                abilities=exact_a,
+                related_pokemons=_dedup_by_display(related_p)[:max_items],
+                related_abilities=_dedup_by_display(related_a)[:max_items],
+            )
 
-        # 多个精确同名(妙蛙种子 / 妙蛙种子-眨眼 在归一化后可能撞名) → 走 contain 列表分支
+        # 多个精确同名(归一化后撞名,如英文名 "Pikachu" 多形态) → 走 contain 列表分支
         if len(exact_p) + len(exact_a) > 1:
             return MatchResult(level="contain", pokemons=exact_p[:max_items], abilities=exact_a[:max_items])
 
