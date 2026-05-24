@@ -367,7 +367,14 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     sugar = rec.get("sugar", "—") or "—"
 
     main_ab = (rec.get("ability") or "").strip()
-    else_ab_items = [p.strip() for p in (rec.get("elseAbility") or "").split("\n") if p.strip()]
+    raw_else = (rec.get("elseAbility") or "").strip()
+    # mega 宝可梦: 数据里用 elseAbility=="mega" 标记;
+    # 此类卡片不展示"转换后能力"与"掉落"两块。
+    is_mega = raw_else.lower() == "mega"
+    else_ab_items = (
+        [] if is_mega
+        else [p.strip() for p in raw_else.split("\n") if p.strip()]
+    )
     drop_text = rec.get("drop", "—") or "—"
     pos_text = _join_multi(rec.get("position"))
 
@@ -419,9 +426,9 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
         + 18
         + sec_h + pill_block_h + 10        # 数据
         + sec_h + main_ab_block_h + 10     # 主能力
-        + sec_h + else_block_h + 10        # 转换后能力
+        + (0 if is_mega else sec_h + else_block_h + 10)
         + sec_h + pos_block_h + 10         # 出现位置
-        + sec_h + drop_block_h + 10        # 掉落
+        + (0 if is_mega else sec_h + drop_block_h + 10)
         + inner_pad
         + pad
     )
@@ -508,10 +515,11 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     y = _draw_tags_wrapped(draw, (content_x, y), [main_ab] if main_ab else [], f_label, accent, content_w)
     y += 10
 
-    # ---- 转换后能力 (多个 tag) ----
-    y = _section_header(draw, (content_x, y), "转换后能力", f_section, accent, content_w)
-    y = _draw_tags_wrapped(draw, (content_x, y), else_ab_items, f_label, accent, content_w)
-    y += 10
+    # ---- 转换后能力 (多个 tag) - mega 不展示 ----
+    if not is_mega:
+        y = _section_header(draw, (content_x, y), "转换后能力", f_section, accent, content_w)
+        y = _draw_tags_wrapped(draw, (content_x, y), else_ab_items, f_label, accent, content_w)
+        y += 10
 
     # ---- 出现位置 ----
     y = _section_header(draw, (content_x, y), "出现位置", f_section, accent, content_w)
@@ -520,12 +528,13 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
         y += th_small
     y += 6
 
-    # ---- 掉落 ----
-    y = _section_header(draw, (content_x, y), "掉落", f_section, accent, content_w)
-    _draw_text(draw, (content_x, y), drop_text, f_val, fill=TEXT)
-    y += line_h
+    # ---- 掉落 - mega 不展示 ----
+    if not is_mega:
+        y = _section_header(draw, (content_x, y), "掉落", f_section, accent, content_w)
+        _draw_text(draw, (content_x, y), drop_text, f_val, fill=TEXT)
+        y += line_h
 
-    key = f"pokemon::v4::{rec.get('no1')}::{rec.get('name')}::{rec.get('nameEn')}"
+    key = f"pokemon::v5::{rec.get('no1')}::{rec.get('name')}::{rec.get('nameEn')}"
     return _save_png(img.convert("RGB"), ctx.out_dir, key)
 
 
