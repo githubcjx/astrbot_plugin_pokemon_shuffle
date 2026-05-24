@@ -21,11 +21,12 @@ from rapidfuzz import fuzz
 
 
 # ---------- 归一化 ----------
-_NON_ALNUM_RE = re.compile(r"[\s　\-_\.\+()（）\[\]【】,，。!！?？:：;；'\"]+")
+# 注意: + 不能剥离,游戏里"能力+"表示升级版,与原能力是不同条目(如 "连击" vs "连击+")。
+_NON_ALNUM_RE = re.compile(r"[\s　\-_\.()（）\[\]【】,，。:：;；'\"]+")
 
 
 def normalize(text: str) -> str:
-    """去掉空白/常见标点并转小写,用于匹配比较。"""
+    """去掉空白/常见标点并转小写,用于匹配比较。保留 +/!/? 等承载语义的字符。"""
     if not text:
         return ""
     return _NON_ALNUM_RE.sub("", text).lower()
