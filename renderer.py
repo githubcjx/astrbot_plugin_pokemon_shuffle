@@ -90,6 +90,18 @@ TYPE_COLORS = {
 }
 ABILITY_FRAME = (118, 92, 200)   # 能力卡用紫色框,区别于宝可梦卡
 
+# 装饰小图标(运行时下载并缓存,与宝可梦图标共用 IconCache)
+CANDY_ICON_URL = (
+    "https://s1.52poke.com/wiki/thumb/3/39/"
+    "Bag_%E6%9C%80%E5%A4%A7%E7%AD%89%E7%BA%A7%E6%8F%90%E5%8D%87_Sprite.png/"
+    "32px-Bag_%E6%9C%80%E5%A4%A7%E7%AD%89%E7%BA%A7%E6%8F%90%E5%8D%87_Sprite.png"
+)
+ABILITY_EXP_ICON_URL = (
+    "https://s1.52poke.com/wiki/thumb/9/9a/"
+    "Bag_%E8%83%BD%E5%8A%9B%E5%A2%9E%E5%BC%BA_Sprite.png/"
+    "32px-Bag_%E8%83%BD%E5%8A%9B%E5%A2%9E%E5%BC%BA_Sprite.png"
+)
+
 
 # ---------- 工具 ----------
 @dataclass
@@ -212,15 +224,24 @@ def _pill(draw: ImageDraw.ImageDraw, xy, text, font, fill, text_fill=WHITE, pad_
     return x + w, y + h
 
 
-def _stat_pill(draw: ImageDraw.ImageDraw, xy, label, value, font_label, font_value, accent):
-    """左半淡色 label,右半深色 value 的复合 pill。"""
+def _stat_pill(
+    draw: ImageDraw.ImageDraw, xy, label, value, font_label, font_value, accent,
+    canvas: Image.Image | None = None, icon_path: Path | None = None,
+):
+    """左半淡色 label,右半深色 value 的复合 pill。
+    若提供 icon_path,会在 label 左侧贴一个小图标。"""
     x, y = xy
     pad_x = 14
     pad_y = 6
     lw = _text_w(font_label, label)
     vw = _text_w(font_value, value)
     th = max(_text_h(font_label), _text_h(font_value))
-    w_total = lw + vw + pad_x * 3
+    icon_h = th + 2
+    icon_w = icon_h if (icon_path and icon_path.exists()) else 0
+    icon_gap = 6 if icon_w else 0
+
+    label_block_w = icon_w + icon_gap + lw
+    w_total = label_block_w + vw + pad_x * 3
     h = th + pad_y * 2
     # 背景
     draw.rounded_rectangle((x, y, x + w_total, y + h), radius=h // 2, fill=_lighten(accent, 0.78))
@@ -230,18 +251,70 @@ def _stat_pill(draw: ImageDraw.ImageDraw, xy, label, value, font_label, font_val
         (x + w_total - right_w, y, x + w_total, y + h),
         radius=h // 2, fill=accent,
     )
+    # 图标
+    if icon_w and canvas is not None:
+        _paste_icon_scaled(
+            canvas, icon_path,
+            (x + pad_x, y + (h - icon_h) // 2, icon_w, icon_h),
+        )
     # 文本
-    _draw_text(draw, (x + pad_x, y + pad_y - 1), label, font_label, fill=_darken(accent, 0.45))
+    _draw_text(draw, (x + pad_x + icon_w + icon_gap, y + pad_y - 1), label, font_label, fill=_darken(accent, 0.45))
     _draw_text(draw, (x + w_total - right_w + pad_x, y + pad_y - 1), value, font_value, fill=WHITE)
     return x + w_total, y + h
 
 
-def _section_header(draw: ImageDraw.ImageDraw, xy, text, font, accent, content_w: int):
-    """带左侧色条的小节标题,后接细横线。"""
+def _tag_pill(draw: ImageDraw.ImageDraw, xy, text, font, accent, pad_x=12, pad_y=5):
+    """tag 风格小药丸: 浅色底 + 同色描边 + 深色文字。返回 (右 x, 底 y)。"""
+    x, y = xy
+    tw = _text_w(font, text)
+    th = _text_h(font)
+    w = tw + pad_x * 2
+    h = th + pad_y * 2
+    bg = _lighten(accent, 0.78)
+    border = accent
+    fg = _darken(accent, 0.45)
+    draw.rounded_rectangle((x, y, x + w, y + h), radius=h // 2, fill=bg, outline=border, width=1)
+    _draw_text(draw, (x + pad_x, y + pad_y - 1), text, font, fill=fg)
+    return x + w, y + h
+
+
+def _draw_tags_wrapped(
+    draw: ImageDraw.ImageDraw, origin, items: list[str], font, accent,
+    content_w: int, gap: int = 8,
+) -> int:
+    """把 items 依次画成 tag,自动换行。返回结束的 y(最后一行底部)。"""
+    if not items:
+        _draw_text(draw, origin, "—", font, fill=MUTED)
+        return origin[1] + _text_h(font) + 6
+    x, y = origin
+    th = _text_h(font)
+    h = th + 5 * 2
+    for item in items:
+        tw = _text_w(font, item)
+        w = tw + 12 * 2
+        if x != origin[0] and x + w > origin[0] + content_w:
+            x = origin[0]
+            y += h + gap
+        _tag_pill(draw, (x, y), item, font, accent)
+        x += w + gap
+    return y + h
+
+
+def _section_header(
+    draw: ImageDraw.ImageDraw, xy, text, font, accent, content_w: int,
+    canvas: Image.Image | None = None, icon_path: Path | None = None,
+):
+    """带左侧色条的小节标题,后接细横线。可选 icon 紧贴标题右侧。"""
     x, y = xy
     bar_h = _text_h(font) + 2
     draw.rounded_rectangle((x, y + 2, x + 5, y + bar_h - 2), radius=2, fill=accent)
     _draw_text(draw, (x + 14, y - 2), text, font, fill=_darken(accent, 0.4))
+    if icon_path and icon_path.exists() and canvas is not None:
+        text_w = _text_w(font, text)
+        icon_h = _text_h(font) + 4
+        icon_x = x + 14 + text_w + 8
+        icon_y = y + (bar_h - icon_h) // 2 - 1
+        _paste_icon_scaled(canvas, icon_path, (icon_x, icon_y, icon_h, icon_h))
     th_end = y + bar_h
     line_y = th_end + 2
     draw.line((x, line_y, x + content_w, line_y), fill=DIVIDER, width=1)
@@ -293,14 +366,10 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     lvmx = rec.get("LvMaxAtk", "—") or "—"
     sugar = rec.get("sugar", "—") or "—"
 
-    main_ab = rec.get("ability", "—") or "—"
-    else_ab = _join_multi(rec.get("elseAbility"))
+    main_ab = (rec.get("ability") or "").strip()
+    else_ab_items = [p.strip() for p in (rec.get("elseAbility") or "").split("\n") if p.strip()]
     drop_text = rec.get("drop", "—") or "—"
     pos_text = _join_multi(rec.get("position"))
-
-    ability_desc = ""
-    if ability_detail:
-        ability_desc = ((ability_detail.get("abilityEffect") or {}).get("effect") or "").strip()
 
     # ---- 估算高度 ----
     panel_x0 = pad
@@ -311,35 +380,45 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
 
     th_small = _text_h(f_small)
     th_val = _text_h(f_val)
+    th_tag = _text_h(f_label) + 5 * 2   # tag pill 整体高
     line_h = th_val + 6
 
     # 4 个 pill 自动布局所需高度 (2 行)
     pill_block_h = (th_val + 12) * 2 + 12
 
-    # 主能力简介
-    desc_lines = _wrap_text(f"【{main_ab}】 {ability_desc}", f_small, content_w) if ability_desc else []
-    desc_block_h = th_small * len(desc_lines)
+    # 主能力 tag (1 行)
+    main_ab_block_h = th_tag if main_ab else line_h
 
-    # 转换后能力
-    else_lines = _wrap_text(else_ab, f_small, content_w - 120)
-    else_block_h = max(line_h, th_small * len(else_lines))
+    # 转换后能力 tags (估算行数)
+    def _tags_rows(items, font, content_w, gap=8):
+        if not items:
+            return 1
+        x, rows = 0, 1
+        for it in items:
+            w = _text_w(font, it) + 12 * 2
+            if x != 0 and x + w > content_w:
+                rows += 1
+                x = 0
+            x += w + gap
+        return rows
+    else_rows = _tags_rows(else_ab_items, f_label, content_w)
+    else_block_h = th_tag * else_rows + 8 * (else_rows - 1)
 
     # 出现位置
-    pos_lines = _wrap_text(pos_text, f_small, content_w - 120)
+    pos_lines = _wrap_text(pos_text, f_small, content_w)
     pos_block_h = max(line_h, th_small * len(pos_lines))
 
     drop_block_h = line_h
 
-    sec_h = 38   # _section_header 实际占用 (色条+文本+横线+8 padding)
+    sec_h = 38   # _section_header 实际占用
     height = (
         pad
-        + 80   # header 名字+编号区
-        + 12   # type/main_ab badges
+        + 80   # 名字 + 编号
         + 14
         + art_h
         + 18
-        + sec_h + pill_block_h + 10        # 数值 section
-        + (sec_h + desc_block_h + 10 if desc_lines else 0)
+        + sec_h + pill_block_h + 10        # 数据
+        + sec_h + main_ab_block_h + 10     # 主能力
         + sec_h + else_block_h + 10        # 转换后能力
         + sec_h + pos_block_h + 10         # 出现位置
         + sec_h + drop_block_h + 10        # 掉落
@@ -366,7 +445,7 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     no_text = f"No.{no1}  ·  {name_en}"
     _draw_text(draw, (content_x, y + name_h + 2), no_text, f_no, fill=MUTED)
 
-    # 右上角属性 badge
+    # 右上角仅保留属性 badge
     type_badge = rec.get("type", "—") or "—"
     bb = f_badge.getbbox(type_badge)
     bw = bb[2] - bb[0] + 22
@@ -376,16 +455,7 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     draw.rounded_rectangle((bx, by, bx + bw, by + bh), radius=bh // 2, fill=accent)
     _draw_text(draw, (bx + 11, by + 5), type_badge, f_badge, fill=WHITE)
 
-    # 主能力 badge (放属性下面)
-    mb = f_badge.getbbox(main_ab)
-    mbw = mb[2] - mb[0] + 22
-    mbh = mb[3] - mb[1] + 12
-    mbx = panel_x1 - inner_pad - mbw
-    mby = by + bh + 6
-    draw.rounded_rectangle((mbx, mby, mbx + mbw, mby + mbh), radius=mbh // 2, fill=GOLD)
-    _draw_text(draw, (mbx + 11, mby + 5), main_ab, f_badge, fill=WHITE)
-
-    y += 86
+    y += 80
 
     # ---- 图像窗口 (TCG art window) ----
     art_box = (content_x, y, content_x + content_w, y + art_h)
@@ -410,42 +480,38 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
 
     # ---- 数值 pill 区 ----
     y = _section_header(draw, (content_x, y), "数据", f_section, accent, content_w)
-    # 4 个 stat_pill,自动两行
+    candy_icon = await ctx.icons.get(CANDY_ICON_URL)
     pill_data = [
-        ("基础攻击", str(base)),
-        ("Lv.10 攻击", str(lv10)),
-        ("满级攻击", str(lvmx)),
-        ("糖果", str(sugar)),
+        ("基础攻击", str(base), None),
+        ("Lv.10 攻击", str(lv10), None),
+        ("满级攻击", str(lvmx), None),
+        ("糖果", str(sugar), candy_icon),
     ]
     px, py = content_x, y
     row_h = th_val + 14
-    for label, value in pill_data:
-        # 测量
+    for label, value, icon in pill_data:
         pad_x = 14
         lw = _text_w(f_label, label)
         vw = _text_w(f_val, value)
-        pill_w = lw + vw + pad_x * 3
+        icon_w = (th_val + 2 + 6) if (icon and icon.exists()) else 0
+        pill_w = icon_w + lw + vw + pad_x * 3
         if px + pill_w > content_x + content_w:
             px = content_x
             py += row_h + 8
-        _stat_pill(draw, (px, py), label, value, f_label, f_val, accent)
+        _stat_pill(draw, (px, py), label, value, f_label, f_val, accent,
+                   canvas=img, icon_path=icon)
         px += pill_w + 10
     y = py + row_h + 14
 
-    # ---- 主能力简介 ----
-    if desc_lines:
-        y = _section_header(draw, (content_x, y), "主能力", f_section, accent, content_w)
-        for ln in desc_lines:
-            _draw_text(draw, (content_x, y), ln, f_small, fill=TEXT)
-            y += th_small
-        y += 6
+    # ---- 主能力 (tag) ----
+    y = _section_header(draw, (content_x, y), "主能力", f_section, accent, content_w)
+    y = _draw_tags_wrapped(draw, (content_x, y), [main_ab] if main_ab else [], f_label, accent, content_w)
+    y += 10
 
-    # ---- 转换后能力 ----
+    # ---- 转换后能力 (多个 tag) ----
     y = _section_header(draw, (content_x, y), "转换后能力", f_section, accent, content_w)
-    for ln in else_lines or ["—"]:
-        _draw_text(draw, (content_x, y), ln, f_small, fill=TEXT)
-        y += th_small
-    y += 6
+    y = _draw_tags_wrapped(draw, (content_x, y), else_ab_items, f_label, accent, content_w)
+    y += 10
 
     # ---- 出现位置 ----
     y = _section_header(draw, (content_x, y), "出现位置", f_section, accent, content_w)
@@ -459,7 +525,7 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     _draw_text(draw, (content_x, y), drop_text, f_val, fill=TEXT)
     y += line_h
 
-    key = f"pokemon::v3::{rec.get('no1')}::{rec.get('name')}::{rec.get('nameEn')}"
+    key = f"pokemon::v4::{rec.get('no1')}::{rec.get('name')}::{rec.get('nameEn')}"
     return _save_png(img.convert("RGB"), ctx.out_dir, key)
 
 
@@ -498,7 +564,9 @@ async def render_ability(ctx: RenderContext, entry: Entry) -> Path:
     total = sum(int(s) for s in exp_parts if s.isdigit())
     exp_pretty = " / ".join(exp_parts) + (f"    总共 {total}" if total else "")
 
-    effect_lines = [p.strip() for p in (rec.get("effect") or "").split("\n\n") if p.strip()]
+    # 升级效果合并为一行(用 · 分隔);超长会由 _wrap_text 自动换行兜底
+    effect_parts = [p.strip() for p in (rec.get("effect") or "").split("\n\n") if p.strip()]
+    effect_one_line = "   ·   ".join(effect_parts) if effect_parts else "—"
 
     eff = rec.get("abilityEffect") or {}
     desc_text = eff.get("description") or "—"
@@ -513,6 +581,7 @@ async def render_ability(ctx: RenderContext, entry: Entry) -> Path:
 
     desc_lines = _wrap_text(desc_text, f_small, content_w)
     real_lines = _wrap_text(real_effect, f_small, content_w)
+    effect_lines_wrapped = _wrap_text(effect_one_line, f_small, content_w)
 
     # 拥有宝可梦行高(自动换行)
     def row_count(pms, gap=8):
@@ -535,7 +604,7 @@ async def render_ability(ctx: RenderContext, entry: Entry) -> Path:
         + 18
         + sec_h + line_h + 6                                # 发动率
         + sec_h + line_h + 6                                # 经验
-        + sec_h + (th_small * max(1, len(effect_lines))) + 8
+        + sec_h + (th_small * max(1, len(effect_lines_wrapped))) + 8
         + sec_h + (th_small * max(1, len(desc_lines))) + 8
         + sec_h + (th_small * max(1, len(real_lines))) + 8
         + sec_h + init_h + 8                                # 初期
@@ -574,14 +643,18 @@ async def render_ability(ctx: RenderContext, entry: Entry) -> Path:
     _draw_text(draw, (content_x, y), fdl_pretty, f_val, fill=TEXT)
     y += line_h + 6
 
-    # 能力增强经验
-    y = _section_header(draw, (content_x, y), "能力增强经验", f_section, accent, content_w)
+    # 能力增强经验 (section header 右侧带 sprite 图标)
+    exp_icon = await ctx.icons.get(ABILITY_EXP_ICON_URL)
+    y = _section_header(
+        draw, (content_x, y), "能力增强经验", f_section, accent, content_w,
+        canvas=img, icon_path=exp_icon,
+    )
     _draw_text(draw, (content_x, y), exp_pretty or "—", f_val, fill=TEXT)
     y += line_h + 6
 
-    # 升级效果
+    # 升级效果(单行展示,溢出宽度才自动换行)
     y = _section_header(draw, (content_x, y), "升级效果", f_section, accent, content_w)
-    for ln in effect_lines:
+    for ln in effect_lines_wrapped:
         _draw_text(draw, (content_x, y), ln, f_small, fill=TEXT)
         y += th_small
     y += 8
@@ -609,7 +682,7 @@ async def render_ability(ctx: RenderContext, entry: Entry) -> Path:
     y = _section_header(draw, (content_x, y), "转换后拥有的宝可梦", f_section, accent, content_w)
     await _paste_pm_row(img, ctx, change_pms, (content_x, y), icon_size, content_w)
 
-    key = f"ability::v3::{name_cn}::{name_en}"
+    key = f"ability::v4::{name_cn}::{name_en}"
     return _save_png(img.convert("RGB"), ctx.out_dir, key)
 
 
