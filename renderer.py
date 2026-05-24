@@ -153,6 +153,15 @@ def _paste_icon(canvas: Image.Image, icon_path: Path | None, xy: tuple[int, int]
 
 
 # ---------- 宝可梦卡片 ----------
+def _join_multi(text: str | None, sep: str = " / ") -> str:
+    """数据里用 \n 分隔的多值字段(如 elseAbility / position) → 单行展示,
+    渲染时再根据可用宽度自动换行。"""
+    if not text:
+        return "—"
+    parts = [p.strip() for p in text.split("\n") if p.strip()]
+    return sep.join(parts) if parts else "—"
+
+
 async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict | None) -> Path:
     rec = entry.raw
     fonts = ctx.fonts
@@ -165,46 +174,78 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     width = 720
     pad = 24
     icon_size = 96
-
-    # 先确定动态高度
-    sections: list[tuple[str, str]] = [
-        ("属性", rec.get("type", "—")),
-        ("糖果", rec.get("sugar", "—")),
-        ("基础攻击", rec.get("baseAtk", "—")),
-        ("Lv.10 攻击", rec.get("lv10Atk", "—")),
-        ("满级攻击", rec.get("LvMaxAtk", "—")),
-        ("主能力", rec.get("ability", "—") or "—"),
-        ("转换后能力", rec.get("elseAbility", "—") or "—"),
-        ("掉落", rec.get("drop", "—") or "—"),
-    ]
-    pos_text = rec.get("position", "") or "—"
     content_w = width - pad * 2
 
-    # 估算高度
-    header_h = max(icon_size, 80) + pad
-    line_h = _text_h(f_val) + 6
-    body_h = line_h * len(sections) + pad
-    pos_lines = _wrap_text(pos_text, f_small, content_w - 100)
-    pos_h = line_h + _text_h(f_small) * len(pos_lines) + 12
+    # 两栏布局:左栏紧凑数值,右栏长文本字段
+    base = rec.get("baseAtk", "—") or "—"
+    lv10 = rec.get("lv10Atk", "—") or "—"
+    lvmx = rec.get("LvMaxAtk", "—") or "—"
+    atk_combined = f"{base} → {lv10} → {lvmx}"
 
-    # 附带能力说明(短)
-    ability_block_h = 0
+    left_fields: list[tuple[str, str]] = [
+        ("属性", rec.get("type", "—") or "—"),
+        ("糖果", rec.get("sugar", "—") or "—"),
+        ("攻击力", atk_combined),
+        ("主能力", rec.get("ability", "—") or "—"),
+    ]
+    right_fields: list[tuple[str, str]] = [
+        ("转换后能力", _join_multi(rec.get("elseAbility"))),
+        ("掉落", rec.get("drop", "—") or "—"),
+    ]
+    pos_text = _join_multi(rec.get("position"))
+
+    # ---- 列宽 ----
+    left_label_x = pad + 8
+    left_val_x = pad + 100
+    left_val_w = 230   # 左值可用宽度
+    right_label_x = pad + 360
+    right_val_x = pad + 480
+    right_val_w = width - pad - right_val_x - 8
+
+    line_h = _text_h(f_val) + 6
+    small_lh = _text_h(f_small)
+
+    # 预先 wrap 左右栏每个字段,得到每行行数,栏总高 = sum(rows)*small_lh
+    def wrap_rows(fields: list[tuple[str, str]], val_w: int) -> list[list[str]]:
+        return [_wrap_text(v, f_small, val_w) for _, v in fields]
+
+    left_wrapped = wrap_rows(left_fields, left_val_w)
+    right_wrapped = wrap_rows(right_fields, right_val_w)
+
+    def block_h(wrapped: list[list[str]]) -> int:
+        h = 0
+        for lines in wrapped:
+            h += max(1, len(lines)) * small_lh + 8
+        return h
+
+    left_h = block_h(left_wrapped)
+    right_h = block_h(right_wrapped)
+    body_h = max(left_h, right_h) + 8
+
+    # 出现位置(全宽行)
+    pos_label_w = f_label.getbbox("出现位置")[2] - f_label.getbbox("出现位置")[0]
+    pos_val_x = left_label_x + pos_label_w + 24
+    pos_val_w = width - pad - pos_val_x - 8
+    pos_lines = _wrap_text(pos_text, f_small, pos_val_w)
+    pos_h = max(line_h, small_lh * len(pos_lines)) + 12
+
+    # 能力简介
     ability_desc_lines: list[str] = []
     if ability_detail:
         desc = (ability_detail.get("abilityEffect", {}) or {}).get("effect", "") or ""
         if desc:
             ability_desc_lines = _wrap_text(f"【{rec.get('ability','')}】 {desc}", f_small, content_w)
-            ability_block_h = _text_h(f_small) * len(ability_desc_lines) + 16
+    ability_block_h = small_lh * len(ability_desc_lines) + (16 if ability_desc_lines else 0)
 
-    height = pad + header_h + body_h + pos_h + ability_block_h + pad
+    header_h = max(icon_size, 80) + pad
+    height = pad + header_h + body_h + 18 + pos_h + ability_block_h + pad
 
-    # 画布
+    # ---- 画布 ----
     img = Image.new("RGB", (width, height), BG)
     draw = ImageDraw.Draw(img)
-    # 卡片底
     draw.rounded_rectangle((12, 12, width - 12, height - 12), radius=16, fill=CARD_BG)
 
-    # ----- 头部 -----
+    # ---- 头部 ----
     icon_url = rec.get("imgUrl", "")
     icon_path = await ctx.icons.get(icon_url) if icon_url else None
     _paste_icon(img, icon_path, (pad + 4, pad + 4), icon_size)
@@ -213,7 +254,6 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     _draw_text(draw, (name_x, pad), rec.get("name", "—"), f_title)
     _draw_text(draw, (name_x, pad + 42), f"No.{rec.get('no1', '—')}  {rec.get('nameEn','')}", f_sub, fill=MUTED)
 
-    # 属性 badge
     type_name = (rec.get("type") or "").split("/")[0].strip()
     color = TYPE_COLORS.get(type_name, (120, 120, 120))
     badge_text = rec.get("type", "—") or "—"
@@ -223,37 +263,44 @@ async def render_pokemon(ctx: RenderContext, entry: Entry, ability_detail: dict 
     draw.rounded_rectangle((bx, by, bx + bw, by + bh), radius=10, fill=color)
     _draw_text(draw, (bx + 10, by + 4), badge_text, f_sub, fill=(255, 255, 255))
 
-    # 分隔线
     y = pad + header_h + 4
     draw.line((pad, y, width - pad, y), fill=DIVIDER, width=1)
     y += 10
 
-    # ----- 主体字段 -----
-    label_x = pad + 8
-    val_x = pad + 150
-    for label, value in sections:
-        _draw_text(draw, (label_x, y), label, f_label, fill=MUTED)
-        _draw_text(draw, (val_x, y), str(value) if value else "—", f_val)
-        y += line_h
+    # ---- 左/右两栏 ----
+    def draw_column(fields, wrapped, label_x, val_x, y_start):
+        cy = y_start
+        for (label, _), lines in zip(fields, wrapped):
+            _draw_text(draw, (label_x, cy), label, f_label, fill=MUTED)
+            ly = cy
+            for ln in lines or ["—"]:
+                _draw_text(draw, (val_x, ly), ln, f_val if len(lines) == 1 else f_small)
+                ly += small_lh if len(lines) > 1 else line_h
+            cy += max(line_h, small_lh * max(1, len(lines))) + 4
 
-    # ----- 出现位置(多行) -----
-    y += 6
-    _draw_text(draw, (label_x, y), "出现位置", f_label, fill=MUTED)
-    line_y = y
-    for ln in pos_lines:
-        _draw_text(draw, (val_x, line_y), ln, f_small)
-        line_y += _text_h(f_small)
-    y = max(line_y, y + line_h) + 6
+    draw_column(left_fields, left_wrapped, left_label_x, left_val_x, y)
+    draw_column(right_fields, right_wrapped, right_label_x, right_val_x, y)
+    y += body_h
 
-    # ----- 能力简介 -----
+    # ---- 分隔 + 出现位置 (全宽) ----
+    draw.line((pad, y, width - pad, y), fill=DIVIDER, width=1)
+    y += 10
+    _draw_text(draw, (left_label_x, y), "出现位置", f_label, fill=MUTED)
+    ly = y
+    for ln in pos_lines or ["—"]:
+        _draw_text(draw, (pos_val_x, ly), ln, f_small)
+        ly += small_lh
+    y = max(ly, y + line_h) + 6
+
+    # ---- 能力简介 ----
     if ability_desc_lines:
         draw.line((pad, y, width - pad, y), fill=DIVIDER, width=1)
         y += 8
         for ln in ability_desc_lines:
-            _draw_text(draw, (label_x, y), ln, f_small, fill=TEXT)
-            y += _text_h(f_small)
+            _draw_text(draw, (left_label_x, y), ln, f_small, fill=TEXT)
+            y += small_lh
 
-    key = f"pokemon::{rec.get('no1')}::{rec.get('name')}::{rec.get('nameEn')}"
+    key = f"pokemon::{rec.get('no1')}::{rec.get('name')}::{rec.get('nameEn')}::v2"
     return _save_png(img, ctx.out_dir, key)
 
 
