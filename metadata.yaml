@@ -1,0 +1,5 @@
+name: astrbot_plugin_pokemon_shuffle
+desc: 宝可梦消消乐(Pokemon Shuffle)数据查询插件,支持宝可梦与能力的中英文查询、模糊匹配和图片卡片返回。
+version: 0.1.0
+author: githubcjx
+repo: https://github.com/githubcjx/Pokemon-Shuffle-Data

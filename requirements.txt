@@ -1,0 +1,3 @@
+Pillow>=10.0.0
+rapidfuzz>=3.0.0
+aiohttp>=3.9.0

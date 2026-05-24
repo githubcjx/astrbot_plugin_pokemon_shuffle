@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行时缓存,不入库
+cache/icons/*
+cache/cards/*
+!cache/icons/.gitkeep
+!cache/cards/.gitkeep
+
+# 字体由使用者自行放入,可选不入库(若你打包了字体可移除下面这行)
+fonts/*
+!fonts/.gitkeep

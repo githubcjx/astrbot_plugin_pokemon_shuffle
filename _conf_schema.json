@@ -1,0 +1,18 @@
+{
+  "command_prefix": {
+    "description": "触发查询的指令前缀,默认 / ;改成空字符串则匹配任意消息",
+    "type": "string",
+    "default": "/",
+    "hint": "如想用 . 触发,改为 ."
+  },
+  "fuzzy_threshold": {
+    "description": "模糊匹配相似度阈值(0-100),低于此值的候选不会作为'您要查询的是否是'建议返回",
+    "type": "int",
+    "default": 50
+  },
+  "max_list_items": {
+    "description": "包含匹配/模糊建议列表中每段最多返回多少条",
+    "type": "int",
+    "default": 15
+  }
+}
