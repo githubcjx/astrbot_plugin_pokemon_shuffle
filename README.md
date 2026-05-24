@@ -42,6 +42,8 @@ pip install -r requirements.txt
 | `command_prefix` | `/` | 触发前缀。改成 `.` 即 `.皮卡丘` |
 | `fuzzy_threshold` | `50` | 模糊匹配相似度阈值(0-100) |
 | `max_list_items` | `15` | 每段列表最多返回多少条 |
+| `enabled_groups` | `[]` | 群聊白名单:填入群号字符串,只在这些群响应;留空表示所有群都生效 |
+| `respond_in_private` | `true` | 是否响应私聊消息(与群聊白名单独立) |
 
 ## 示例响应
 

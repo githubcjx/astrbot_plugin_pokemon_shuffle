@@ -38,6 +38,9 @@ class PokemonShufflePlugin(Star):
         self.prefix: str = self.config.get("command_prefix", "/")
         self.fuzzy_threshold: int = int(self.config.get("fuzzy_threshold", 50))
         self.max_list_items: int = int(self.config.get("max_list_items", 15))
+        # 群聊白名单:字符串列表;空列表 = 所有群
+        self.enabled_groups: set[str] = {str(g).strip() for g in (self.config.get("enabled_groups") or []) if str(g).strip()}
+        self.respond_in_private: bool = bool(self.config.get("respond_in_private", True))
 
         self.dataset = Dataset(PLUGIN_DIR / "data")
         self.icons = IconCache(PLUGIN_DIR / "cache" / "icons")
@@ -48,15 +51,40 @@ class PokemonShufflePlugin(Star):
             out_dir=PLUGIN_DIR / "cache" / "cards",
         )
         logger.info(
-            "[pokemon-shuffle] loaded %d pokemons, %d abilities, prefix=%r",
+            "[pokemon-shuffle] loaded %d pokemons, %d abilities, prefix=%r, "
+            "enabled_groups=%s, respond_in_private=%s",
             len(self.dataset.pokemons),
             len(self.dataset.abilities),
             self.prefix,
+            "ALL" if not self.enabled_groups else sorted(self.enabled_groups),
+            self.respond_in_private,
         )
+
+    # ---------- 作用域过滤 ----------
+    def _is_scope_allowed(self, event: AstrMessageEvent) -> bool:
+        """根据白名单 + 私聊开关判断是否处理本条消息。"""
+        # 私聊
+        try:
+            is_private = bool(event.is_private_chat())
+        except Exception:
+            is_private = False
+        if is_private:
+            return self.respond_in_private
+        # 群聊
+        try:
+            gid = str(event.get_group_id() or "")
+        except Exception:
+            gid = ""
+        if not self.enabled_groups:
+            return True   # 未配置 → 所有群都生效
+        return gid in self.enabled_groups
 
     # 监听所有消息,自行解析前缀(因为指令是动态名称,@filter.command 不适用)
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
+        if not self._is_scope_allowed(event):
+            return
+
         raw = (event.message_str or "").strip()
         if not raw:
             return

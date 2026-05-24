@@ -14,5 +14,16 @@
     "description": "包含匹配/模糊建议列表中每段最多返回多少条",
     "type": "int",
     "default": 15
+  },
+  "enabled_groups": {
+    "description": "群聊白名单:填入群号(字符串),只有这些群会触发查询;留空则所有群都生效",
+    "type": "list",
+    "default": [],
+    "hint": "例: [\"123456789\", \"987654321\"]"
+  },
+  "respond_in_private": {
+    "description": "是否响应私聊消息(与群聊白名单互不影响)",
+    "type": "bool",
+    "default": true
   }
 }
