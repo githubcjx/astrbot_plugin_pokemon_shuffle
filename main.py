@@ -36,6 +36,7 @@ class PokemonShufflePlugin(Star):
         super().__init__(context)
         self.config = config or {}
         self.prefix: str = self.config.get("command_prefix", "/")
+        self.id_prefix: str = self.config.get("id_prefix", "#")
         self.fuzzy_threshold: int = int(self.config.get("fuzzy_threshold", 50))
         self.max_list_items: int = int(self.config.get("max_list_items", 15))
         # 群聊白名单:字符串列表;空列表 = 所有群
@@ -88,6 +89,21 @@ class PokemonShufflePlugin(Star):
         raw = (event.message_str or "").strip()
         if not raw:
             return
+
+        # 优先匹配编号前缀(如 #001 / #25),再匹配名称前缀(/皮卡丘)
+        if self.id_prefix and raw.startswith(self.id_prefix):
+            query = raw[len(self.id_prefix):].strip()
+            if not query:
+                return
+            try:
+                result = self.dataset.search_by_no2(query, max_items=self.max_list_items)
+            except Exception as e:
+                logger.exception("[pokemon-shuffle] no2 search failed: %s", e)
+                return
+            async for r in self._respond(event, query, result):
+                yield r
+            return
+
         if self.prefix and not raw.startswith(self.prefix):
             return
         query = raw[len(self.prefix):].strip()

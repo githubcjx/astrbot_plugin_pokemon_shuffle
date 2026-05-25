@@ -1,9 +1,14 @@
 {
   "command_prefix": {
-    "description": "触发查询的指令前缀,默认 / ;改成空字符串则匹配任意消息",
+    "description": "按名称查询的指令前缀,默认 / ;改成空字符串则匹配任意消息",
     "type": "string",
     "default": "/",
     "hint": "如想用 . 触发,改为 ."
+  },
+  "id_prefix": {
+    "description": "按全国图鉴编号(no2)查询的前缀,如 #001 或 #1 → 妙蛙种子;留空表示禁用",
+    "type": "string",
+    "default": "#"
   },
   "fuzzy_threshold": {
     "description": "模糊匹配相似度阈值(0-100),低于此值的候选不会作为'您要查询的是否是'建议返回",

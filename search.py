@@ -85,6 +85,21 @@ class Dataset:
         """根据能力中文名(原始)取详情,用于宝可梦卡片附带显示。"""
         return self._ability_by_name.get(normalize(name))
 
+    # ---------- 按全国图鉴编号(no2) ----------
+    def search_by_no2(self, query: str, max_items: int = 30) -> "MatchResult":
+        """支持 "1" / "001" / "025" 等输入,3 位补零后比对 no2 字段。
+        同一编号可能对应多个形态 → 返回多条时走 contain 列表分支。"""
+        q = (query or "").strip().lstrip("0") or "0"
+        if not q.isdigit():
+            return MatchResult(level="none")
+        padded = q.zfill(3)
+        hits = [e for e in self.pokemons if (e.raw.get("no2") or "") == padded]
+        if not hits:
+            return MatchResult(level="none")
+        if len(hits) == 1:
+            return MatchResult(level="exact", pokemons=hits)
+        return MatchResult(level="contain", pokemons=hits[:max_items])
+
     # ---------- 匹配 ----------
     def search(self, query: str, fuzzy_threshold: int = 50, max_items: int = 15) -> MatchResult:
         nq = normalize(query)
