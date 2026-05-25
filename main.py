@@ -90,34 +90,39 @@ class PokemonShufflePlugin(Star):
         if not raw:
             return
 
-        # 优先匹配编号前缀(如 #001 / #25),再匹配名称前缀(/皮卡丘)
-        if self.id_prefix and raw.startswith(self.id_prefix):
-            query = raw[len(self.id_prefix):].strip()
-            if not query:
-                return
-            try:
-                result = self.dataset.search_by_no1(query, max_items=self.max_list_items)
-            except Exception as e:
-                logger.exception("[pokemon-shuffle] no1 search failed: %s", e)
-                return
-            async for r in self._respond(event, query, result):
-                yield r
-            return
+        query: str | None = None
+        use_no1 = False
 
-        if self.prefix and not raw.startswith(self.prefix):
-            return
-        query = raw[len(self.prefix):].strip()
+        # 编号前缀(如 #001 / #25) - 仅当后续是纯数字时才按 no1 查询;
+        # 否则当作普通名称查询(#梦幻 也能命中)。
+        if self.id_prefix and raw.startswith(self.id_prefix):
+            tail = raw[len(self.id_prefix):].strip()
+            if not tail:
+                return
+            if tail.lstrip("0").isdigit() or tail == "0":
+                query = tail
+                use_no1 = True
+            else:
+                query = tail   # 数字以外 → 走名称搜索
+        elif self.prefix and raw.startswith(self.prefix):
+            query = raw[len(self.prefix):].strip()
+        elif not self.prefix:
+            query = raw
+
         if not query:
             return
 
-        # 避免吞掉别的指令: 如果第一段是常见保留词,跳过
+        # 避免吞掉别的指令
         if query.split()[0].lower() in {"help", "menu", "插件", "重载"}:
             return
 
         try:
-            result = self.dataset.search(
-                query, fuzzy_threshold=self.fuzzy_threshold, max_items=self.max_list_items
-            )
+            if use_no1:
+                result = self.dataset.search_by_no1(query, max_items=self.max_list_items)
+            else:
+                result = self.dataset.search(
+                    query, fuzzy_threshold=self.fuzzy_threshold, max_items=self.max_list_items,
+                )
         except Exception as e:
             logger.exception("[pokemon-shuffle] search failed: %s", e)
             return
