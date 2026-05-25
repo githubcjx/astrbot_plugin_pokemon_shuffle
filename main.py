@@ -96,9 +96,9 @@ class PokemonShufflePlugin(Star):
             if not query:
                 return
             try:
-                result = self.dataset.search_by_no2(query, max_items=self.max_list_items)
+                result = self.dataset.search_by_no1(query, max_items=self.max_list_items)
             except Exception as e:
-                logger.exception("[pokemon-shuffle] no2 search failed: %s", e)
+                logger.exception("[pokemon-shuffle] no1 search failed: %s", e)
                 return
             async for r in self._respond(event, query, result):
                 yield r
